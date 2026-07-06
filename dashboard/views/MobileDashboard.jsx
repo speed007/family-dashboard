@@ -33,9 +33,13 @@ const MobileDashboard = () => {
     Fajr: '02:36 AM', Dhuhr: '01:11 PM', Asr: '06:51 PM', Maghrib: '09:32 PM', Isha: '10:37 PM'
   });
 
-  const MQTT_BROKER = process.env.REACT_APP_MQTT_BROKER_WS || 'ws://192.168.102.112:9001';
-  const MQTT_USER = process.env.REACT_APP_MQTT_USER || 'mqtt-user';
-  const MQTT_PASS = process.env.REACT_APP_MQTT_PASS || 'mqtt-user';
+  // const MQTT_BROKER = process.env.REACT_APP_MQTT_BROKER_WS || 'ws://192.168.102.112:9001';
+  // const MQTT_USER = process.env.REACT_APP_MQTT_USER || 'mqtt-user';
+  // const MQTT_PASS = process.env.REACT_APP_MQTT_PASS || 'mqtt-user';
+
+  const MQTT_BROKER = import.meta.env.VITE_MQTT_BROKER_WS;
+  const MQTT_USER = import.meta.env.VITE_MQTT_USER;
+  const MQTT_PASS = import.meta.env.VITE_MQTT_PASS;
 
   useEffect(() => {
     const client = mqtt.connect(MQTT_BROKER, {
