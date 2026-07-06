@@ -2,7 +2,7 @@
 .env
 *.db
 secrets.json
-
+meal_plan.json
 # Node dependencies and build files
 node_modules/
 dist/
