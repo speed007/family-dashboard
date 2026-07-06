@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
-import mqtt from 'mqtt/mqtt';
-import React from 'react';
+// import mqtt from 'mqtt/mqtt';
+// import React from 'react';
 
 const WEEKLY_MEAL_PLAN = {
   monday: ["Moong Daal - Mugdhon", "Yellow moong Daal", "Kitchdi - Ringru/KARI-Potatoe", "Khatta binda", "KIDNEY BEANS", "SARAGWO"],
