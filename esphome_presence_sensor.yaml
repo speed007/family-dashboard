@@ -1,0 +1,203 @@
+esphome:
+  name: kitchen-presence-sensor
+  friendly_name: "Kitchen Presence Sensor"
+  platform: esp32
+  board: esp32-c3-devkitm-1
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+  id: mqtt_client
+
+logger:
+  level: INFO
+
+ota:
+  password: !secret ota_password
+
+# ==================== LD2420 CONFIGURATION ====================
+# Wiring (same physical pins as the LD2410C):
+#   LD2420 GND  → ESP32-C3 GND
+#   LD2420 5V   → ESP32-C3 5V   (the sensor needs 5V supply, not 3.3V)
+#   LD2420 OT1  → ESP32-C3 GPIO7 (this is the sensor's TX out → C3's RX in)
+#   LD2420 RX   → ESP32-C3 GPIO6 (C3's TX out → sensor's RX in)
+#
+# GPIO6/7 are used deliberately - GPIO20/21 conflict with the ESP32-C3's
+# internal USB-CDC UART and cause unreliable communication with the LD2420.
+#
+# BAUD RATE NOTE: firmware >= v1.5.3 uses 115200 (most modules sold today).
+# If the sensor shows "Firmware Version: v0.0.0" in the ESPHome logs, try
+# changing baud_rate to 256000 - that's the older firmware default.
+#
+# OTA RESTART BUG (still present as of 2026.3.x):
+# After an OTA update the LD2420 sometimes shows firmware v0.0.0 and stops
+# reporting. A physical power cycle always fixes it. The startup_delay: 3s
+# below (a native ld2420 option added in a 2026 PR) is the recommended fix.
+# If your ESPHome version doesn't recognise startup_delay yet, the fallback
+# is to add this block at the top level:
+#   esphome:
+#     on_boot:
+#       then:
+#         - delay: 3s
+
+uart:
+  id: ld2420_uart
+  tx_pin: GPIO6
+  rx_pin: GPIO7
+  baud_rate: 115200
+  parity: NONE
+  stop_bits: 1
+
+ld2420:
+  uart_id: ld2420_uart
+  startup_delay: 3s  # Fixes post-OTA restart issue present in 2026.x builds
+
+# ==================== SENSOR ====================
+sensor:
+  # Moving distance: distance to the nearest moving target in cm.
+  # Note: unlike the LD2410C, the LD2420 does NOT provide a separate
+  # "still presence distance" - it only reports distance when movement
+  # is detected. has_target (below) catches stationary presence via
+  # the sensor's internal still/move thresholds.
+  - platform: ld2420
+    moving_distance:
+      name: "Moving Distance"
+      id: moving_distance
+      unit_of_measurement: "cm"
+      on_value:
+        then:
+          - mqtt.publish:
+              topic: "home/presence/kitchen/distance"
+              payload: !lambda 'return to_string((int) x);'
+
+  # Presence status string published to MQTT.
+  # Because moving_distance is only valid while someone is moving,
+  # we also factor in has_target to detect stationary presence.
+  - platform: template
+    name: "Presence Status"
+    id: presence_status
+    lambda: |-
+      if (!id(has_target).state) {
+        return std::string("away");
+      } else if (id(moving_distance).state > 0 && id(moving_distance).state < 30) {
+        return std::string("near");
+      } else if (id(moving_distance).state >= 30 && id(moving_distance).state < 100) {
+        return std::string("medium");
+      } else {
+        return std::string("far");
+      }
+    update_interval: 1s
+    on_value:
+      then:
+        - mqtt.publish:
+            topic: "home/presence/kitchen/status"
+            payload: !lambda 'return x;'
+
+# ==================== NUMBER ====================
+# These expose the LD2420's built-in configuration to Home Assistant,
+# so you can tune detection range and timeout from the HA UI without
+# reflashing. presence_timeout replaces the delayed_off filter used
+# with the LD2410C - set it to 300 seconds (5 minutes) in the HA UI.
+number:
+  - platform: ld2420
+    presence_timeout:
+      name: "Presence Timeout"  # Set to 300 in HA UI for 5-minute auto-off
+    min_gate_distance:
+      name: "Min Detection Distance"
+    max_gate_distance:
+      name: "Max Detection Distance"
+
+# ==================== BINARY SENSORS ====================
+binary_sensor:
+  # Main presence sensor. The LD2420 handles the timeout internally via
+  # presence_timeout (above) - no delayed_off filter needed here.
+  - platform: ld2420
+    has_target:
+      name: "Presence"
+      id: has_target
+      on_press:
+        then:
+          - logger.log:
+              format: "Presence detected"
+              level: INFO
+      on_release:
+        then:
+          - mqtt.publish:
+              topic: "home/dashboard/kitchen/power"
+              payload: "off"
+          - logger.log:
+              format: "No presence detected - turning off dashboard"
+              level: INFO
+
+  # Close presence (< 30cm of movement) - wakes the dashboard.
+  # Uses moving_distance because the LD2420 doesn't provide continuous
+  # static distance. In practice this fires immediately when someone
+  # walks up to the sensor.
+  - platform: template
+    name: "Close Presence"
+    id: close_presence
+    lambda: |-
+      return id(has_target).state &&
+             id(moving_distance).state > 0 &&
+             id(moving_distance).state < 30;
+    device_class: presence
+    on_press:
+      then:
+        - mqtt.publish:
+            topic: "home/dashboard/kitchen/power"
+            payload: "on"
+        - logger.log:
+            format: "Close presence detected - waking dashboard"
+            level: INFO
+
+# ==================== BUTTONS ====================
+# Expose the LD2420's config controls to HA. "Apply Config" saves any
+# changes you've made to thresholds/distances from the HA UI.
+button:
+  - platform: ld2420
+    apply_config:
+      name: "Apply Config"
+    factory_reset:
+      name: "Factory Reset"
+    restart_module:
+      name: "Restart Module"
+    revert_config:
+      name: "Undo Edits"
+
+# ==================== SWITCHES ====================
+switch:
+  - platform: restart
+    name: "Restart Sensor"
+
+# ==================== TEXT SENSORS ====================
+text_sensor:
+  # LD2420 firmware version - useful for confirming the baud rate
+  # assumption above (115200 for >= v1.5.3, 256000 for older)
+  - platform: ld2420
+    fw_version:
+      name: "LD2420 Firmware Version"
+
+  - platform: version
+    name: "ESPHome Version"
+
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    bssid:
+      name: "BSSID"
+
+# ==================== SELECT ====================
+# Operating mode: Normal, Calibrate, or Simple (for old firmware).
+# Leave on Normal for everyday use. Switch to Calibrate to let the
+# sensor auto-tune its thresholds to your specific room, then press
+# "Apply Config" to save.
+select:
+  - platform: ld2420
+    operating_mode:
+      name: "Operating Mode"

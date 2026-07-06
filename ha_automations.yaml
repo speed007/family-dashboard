@@ -1,0 +1,263 @@
+# Home Assistant Automations for Family Dashboard System
+#
+# This file is a flat list of automations - the same shape Home Assistant
+# expects for automations.yaml when your configuration.yaml has
+# `automation: !include automations.yaml`. That means you can either:
+#   a) rename/copy this whole file to replace your automations.yaml, or
+#   b) append its list items (each "- id: ..." block) to your existing
+#      automations.yaml, at the same top-level indentation as the items
+#      already there.
+# Either way, do NOT add a top-level `automation:` key above these list
+# items yourself - that key already exists once, in configuration.yaml,
+# pointing at this file; adding it again here would nest one automation:
+# key inside another and fail to load.
+
+# ==================== SHOPPING LIST AUTOMATIONS ====================
+
+# Shopping item added via Telegram - send to HA
+- id: 'telegram_shopping_add'
+  alias: "Telegram: Shopping Item Added"
+  trigger:
+    platform: mqtt
+    topic: "home/telegram/shopping_add"
+  action:
+    - service: shopping_list.add_item
+      data:
+        name: "{{ trigger.payload_json.item }}"
+    # Optional: Send feedback back to Telegram
+    - service: notify.telegram
+      data:
+        message: "✅ {{ trigger.payload_json.added_by }} added '{{ trigger.payload_json.item }}' to shopping list"
+
+# ==================== APPOINTMENT AUTOMATIONS ====================
+
+- id: 'telegram_appointment_add'
+  alias: "Telegram: Appointment Added"
+  trigger:
+    platform: mqtt
+    topic: "home/telegram/appointment_add"
+  action:
+    # Create calendar event in Home Assistant
+    - service: calendar.create_event
+      data:
+        calendar_id: "calendar.family_events"  # Update to your calendar ID
+        summary: "{{ trigger.payload_json.title }}"
+        description: "Added by: {{ trigger.payload_json.added_by }}"
+        start_date_time: >
+          {% set raw_time = trigger.payload_json.time | default('9am') %}
+          {% set date = trigger.payload_json.date %}
+          {# strptime's third arg is a fallback used if parsing fails, instead
+             of raising and aborting the whole template - protects against
+             a malformed/unexpected time string (e.g. "4.30pm") reaching
+             here, whether from unusual phrasing or a bot-side parsing miss #}
+          {% set parsed = strptime(raw_time | replace(' ', ''), '%I:%M%p', strptime('9:00AM', '%I:%M%p')) if ':' in raw_time
+                           else strptime(raw_time | replace(' ', ''), '%I%p', strptime('9AM', '%I%p')) %}
+          {{ date }}T{{ parsed.strftime('%H:%M') }}:00
+        end_date_time: >
+          {% set raw_time = trigger.payload_json.time | default('9am') %}
+          {% set date = trigger.payload_json.date %}
+          {% set parsed = strptime(raw_time | replace(' ', ''), '%I:%M%p', strptime('9:00AM', '%I:%M%p')) if ':' in raw_time
+                           else strptime(raw_time | replace(' ', ''), '%I%p', strptime('9AM', '%I%p')) %}
+          {% set end = parsed + timedelta(hours=1) %}
+          {{ date }}T{{ end.strftime('%H:%M') }}:00
+    # Telegram feedback
+    - service: notify.telegram
+      data:
+        message: "📅 {{ trigger.payload_json.added_by }} added '{{ trigger.payload_json.title }}' for {{ trigger.payload_json.date }}"
+
+# ==================== MEAL PLAN AUTOMATIONS ====================
+
+- id: 'telegram_meal_add'
+  alias: "Telegram: Meal Plan Updated"
+  trigger:
+    platform: mqtt
+    topic: "home/telegram/meal_add"
+  action:
+    # Telegram feedback only - telegram_bot.py's publish_dashboard_snapshot()
+    # job is what actually keeps home/dashboard/meal_plan in sync with the
+    # database every 30s, so HA doesn't need to (and shouldn't) republish
+    # a single-meal payload to that topic itself.
+    - service: notify.telegram
+      data:
+        message: "🍽️ {{ trigger.payload_json.added_by }} added '{{ trigger.payload_json.meal }}' for {{ trigger.payload_json.type }} on {{ trigger.payload_json.date }}"
+
+# ==================== DASHBOARD POWER MANAGEMENT ====================
+
+- id: 'dashboard_turn_on'
+  alias: "Dashboard: Turn On (Presence Detected)"
+  trigger:
+    platform: mqtt
+    topic: "home/presence/kitchen/distance"
+  condition:
+    - condition: template
+      value_template: "{{ (trigger.payload | int(0)) < 30 and (trigger.payload | int(0)) > 0 }}"
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.kitchen_monitor_plug  # Update to your smart plug
+      continue_on_error: true
+
+- id: 'dashboard_turn_off'
+  alias: "Dashboard: Turn Off (No Presence)"
+  trigger:
+    platform: mqtt
+    topic: "home/presence/kitchen/distance"
+  condition:
+    - condition: template
+      value_template: "{{ (trigger.payload | int(0)) == 0 or (trigger.payload | int(0)) > 150 }}"
+  action:
+    - service: switch.turn_off
+      target:
+        entity_id: switch.kitchen_monitor_plug
+      continue_on_error: true
+
+# ==================== DASHBOARD DATA PUBLISHING ====================
+
+# NOTE: There are intentionally NO automations here publishing to
+# home/dashboard/shopping_list, home/dashboard/calendar_events, or
+# home/dashboard/meal_plan. telegram_bot.py's publish_dashboard_snapshot()
+# job already publishes all three, sourced from the bot's own SQLite
+# database, every 30s. That job is the single source of truth for all
+# dashboard-facing topics.
+#
+# An earlier version of this file had separate time_interval automations
+# publishing home/dashboard/shopping_list from shopping_list.shopping_list
+# and home/dashboard/calendar_events from calendar.family_events. Those
+# were removed: they read from a *different* data source than the bot
+# (HA's own entities vs. the bot's SQLite tables), so the two publishers
+# periodically raced and overwrote each other on the same topics - the
+# shopping list version even used a different payload shape ({name,
+# complete, id} objects instead of the plain strings the bot sends and
+# dashboard.jsx expects), which could crash the dashboard's rendering
+# when HA's write won the race.
+#
+# Don't add a publisher back for any of these three topics without also
+# removing the bot's publish_dashboard_snapshot() job for that same
+# topic - two writers on one topic will always fight.
+
+# ==================== ALEXA APPOINTMENT ANNOUNCEMENTS ====================
+# Requires the Alexa Media Player custom integration (via HACS) so that
+# notify.alexa_media exists and can speak arbitrary text to a target Echo.
+#
+# Update ALEXA_TARGET_DEVICE below (the media_player.* entity_id) to match
+# your actual Echo. Find it under Settings > Devices & Services > Entities,
+# search "alexa media" / "echo". Per-device notify services like
+# notify.alexa_media_kitchen have existed in some AMP versions and been
+# removed/renamed in others (reported breakage after a 2025.11 update), so
+# these automations use the generic notify.alexa_media service with an
+# explicit target: instead, which has been the more stable pattern.
+#
+# Both automations below use the native HA "calendar" trigger with a
+# time offset, which fires automatically against calendar.family_events
+# without any polling logic. Two caveats from HA's own docs, worth
+# knowing before you rely on this:
+#   1. Calendars are only re-read every ~15 minutes, so the actual
+#      announcement can land up to ~15 min off the offset you set.
+#   2. mode: queued (not the default "single") is used because the docs
+#      explicitly warn that "single" mode can silently miss a trigger if
+#      two events start close together.
+# Note: the "%-I" in the message templates below strips a leading zero
+# from the hour (so "2:00 PM" not "02:00 PM"). This is a Linux/glibc
+# strftime extension - it works on virtually all HA installs (HAOS,
+# Docker, Supervised all run Linux), but isn't portable to Windows if
+# you're running HA Core directly on Windows.
+
+- id: 'alexa_appointment_day_before'
+  alias: "Alexa: Appointment Reminder (Day Before)"
+  mode: queued
+  trigger:
+    - platform: calendar
+      event: start
+      entity_id: calendar.family_events  # Must match the calendar used in calendar.create_event above
+      offset: "-24:00:00"  # 24 hours = "day before", expressed in HH:MM:SS to avoid version differences in day-offset support
+  action:
+    - service: notify.alexa_media
+      target:
+        entity_id: media_player.kitchen_echo  # <-- Update to your actual Echo's media_player entity_id
+      data:
+        message: >
+          Reminder: you have "{{ trigger.calendar_event.summary }}" tomorrow
+          at {{ trigger.calendar_event.start.strftime('%-I:%M %p') }}.
+        data:
+          type: announce  # Alexa Media Player: plays a ding before speaking, instead of a queued message
+
+- id: 'alexa_appointment_hour_before'
+  alias: "Alexa: Appointment Reminder (1 Hour Before)"
+  mode: queued
+  trigger:
+    - platform: calendar
+      event: start
+      entity_id: calendar.family_events
+      offset: "-01:00:00"
+  action:
+    - service: notify.alexa_media
+      target:
+        entity_id: media_player.kitchen_echo  # <-- Update to your actual Echo's media_player entity_id
+      data:
+        message: >
+          Reminder: "{{ trigger.calendar_event.summary }}" starts in about an hour.
+        data:
+          type: announce
+
+# ==================== OPTIONAL: PRESENCE-BASED AUTOMATIONS ====================
+
+# Example: Turn on kitchen light when someone approaches dashboard
+- id: 'kitchen_light_on'
+  alias: "Kitchen Light: Turn On (Presence Near)"
+  trigger:
+    platform: mqtt
+    topic: "home/presence/kitchen/status"
+    payload: "near"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.kitchen_light  # Update to your light
+      data:
+        brightness: 200
+      continue_on_error: true
+
+# ==================== NOTIFICATIONS ====================
+# Configure these in your configuration.yaml:
+# notify:
+#   - platform: telegram
+#     name: telegram
+#     chat_id: YOUR_GROUP_CHAT_ID
+#     api_key: YOUR_BOT_TOKEN
+
+# Example configuration.yaml entries needed:
+
+# automation: !include automations.yaml
+# 
+# mqtt:
+#   broker: YOUR_MQTT_BROKER_IP
+#   username: YOUR_MQTT_USER
+#   password: YOUR_MQTT_PASS
+#
+# telegram_bot:
+#   - platform: polling
+#     api_key: YOUR_BOT_TOKEN
+#     allowed_chat_ids:
+#       - YOUR_GROUP_CHAT_ID
+#
+# notify:
+#   - platform: telegram
+#     name: telegram
+#     chat_id: YOUR_GROUP_CHAT_ID
+#
+# shopping_list:
+#
+# calendar:
+#   - platform: file
+#     name: Family Events
+#     filename: family_calendar.ics
+#     # OR use a calendar integration like Google Calendar
+#
+# switch:
+#   - platform: mqtt
+#     name: "Kitchen Monitor Plug"
+#     unique_id: "kitchen_monitor"
+#     command_topic: "home/smart_plug/kitchen_monitor/command"
+#     state_topic: "home/smart_plug/kitchen_monitor/state"
+#     payload_on: "on"
+#     payload_off: "off"
+#     retain: false

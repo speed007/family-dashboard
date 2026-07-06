@@ -1,0 +1,13 @@
+# Credentials and Environment files
+.env
+*.db
+secrets.json
+
+# Node dependencies and build files
+node_modules/
+dist/
+.eslintcache
+
+# Complete Docker service storage blocks
+mosquitto/
+logs/
