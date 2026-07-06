@@ -190,7 +190,7 @@ Dashboard: Sync Presence Status
 
 ```
 alias: "Dashboard: Sync Presence Status"
-description: ""
+description: "Pushes real-time family location states to the frontend dashboard array"
 triggers:
   - entity_id:
       - person.father
@@ -198,16 +198,11 @@ triggers:
       - person.kids
     trigger: state
 actions:
-  - data:
+  - action: mqtt.publish
+    data:
       topic: home/dashboard/presence
       retain: true
-      payload: |-
-        {
-          "Father": "{{ states('person.father') | title }}",
-          "Mother": "{{ states('person.mother') | title }}",
-          "Kids": "{{ states('person.kids') | title }}"
-        }
-    action: mqtt.publish
+      payload: '{"Father":"{{ states("person.father") | title }}","Mother":"{{ states("person.mother") | title }}","Kids":"{{ states("person.kids") | title }}"}'
 ```
 
 🔐 Security & Safety Notice
