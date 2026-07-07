@@ -1,4 +1,4 @@
-# 🏢 Dynamic Family Hub Dashboard With Home Assistant
+## 🏢 Dynamic Family Hub Dashboard With Home Assistant
 
 Disclaimer: I am not a programmer! I do this as a hobby and because I like to break stuff! Enjoy!
 
@@ -69,27 +69,28 @@ MQTT_PORT=1883
 MQTT_USER=your_mqtt_username
 MQTT_PASS=your_mqtt_password
 ```
-# Optional — enables forwarding sticky notes to Home Assistant as events
+3. Spin Up the Container Infrastructure
+Compile your deployment profile production assets and start the system containers detached:
+
+## Build frontend assets via Vite
+```
+cd dashboard && npm install && npm install npx && npx run build && cd ..
+```
+## Launch core runtime structures
+```
+docker compose up -d --build
+```
+## 📡 Integrations
+
+Home Assistant yaml example files are provided in a seperate folder you can use them and change necessory details for your own Devices and Entities.
+
+Add HA details to the .env file
 ```
 HA_URL=http://your-ha-instance:8123
 HA_TOKEN=your_long_lived_ha_token
 ```
-3. Spin Up the Container Infrastructure
-Compile your deployment profile production assets and start the system containers detached:
 
-# Build frontend assets via Vite
-```
-cd dashboard && npm install && npm install npx && npx run build && cd ..
-```
-# Launch core runtime structures
-```
-docker compose up -d --build
-```
-📡 Integrations
-
-Home Assistant yaml example files are provided in a seperate folder you can use them and change necessory details for your own Devices and Entities.
-
-## 🤖 Here is the complete dictionary of command triggers and keywords your Telegram Dispatch Bot listens for.
+## 🤖 Here is the complete list of triggers and keywords to use with your Telegram Bot.
 
 Your bot relies on regular expressions (re.search and pattern matching) to parse your messages. It doesn't matter if you type them in UPPERCASE, lowercase, or Sentence Case—the backend handles them cleanly.
 
@@ -136,7 +137,7 @@ Bulk Clear: Matches clear menu, clear meal plan, reset menu, delete menu.
 /start – Greets you, builds baseline database structures if they're missing, and prints a helpful instructional layout map directly into your chat window.
 ```
 
-🔐 Security & Safety Notice
+## 🔐 Security & Safety Notice
 
 
 All sensitive database entries (*.db), persistent system logs (logs/), localized runtime keys (.env), and security credentials directories (mosquitto/config/passwd) are explicitly managed by standard root boundaries and strictly filtered out via the workspace .gitignore array.
