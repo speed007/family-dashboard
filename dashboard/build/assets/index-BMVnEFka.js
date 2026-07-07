@@ -17,6 +17,9 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
         ::-webkit-scrollbar {
           display: none;
         }
+        html, body, * {
+          cursor: none !important;
+        }
         html, body {
           margin: 0;
           padding: 0;
