@@ -1,4 +1,6 @@
-# 🏢 Dynamic Family Hub Dashboard & Telemetry Stream
+# 🏢 Dynamic Family Hub Dashboard With Home Assistant
+
+Disclaimer: I am not a programmer! I do this as a hobby and because I like to break stuff! Enjoy!
 
 A premium, ambient dark-mode home automation command center designed for multi-profile layouts. This ecosystem handles dual-frontend presentation layers seamlessly syncing via an asynchronous MQTT pipeline connected to Home Assistant integrations and a Telegram chatbot orchestration layer.
 
@@ -76,7 +78,7 @@ Compile your deployment profile production assets and start the system container
 
 # Build frontend assets via Vite
 ```
-cd dashboard && npm install && npm run build && cd ..
+cd dashboard && npm install && npm install npx && npx run build && cd ..
 ```
 # Launch core runtime structures
 ```
