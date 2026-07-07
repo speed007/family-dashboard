@@ -77,6 +77,8 @@ Compile your deployment profile production assets and start the system container
 cd dashboard && npm install && npm install npx && npx vite build && cd ..
 ```
 ## Launch core runtime structures
+
+This must run inside the folder/dir  "family-dashboard"
 ```
 docker compose up -d --build
 ```
