@@ -1,5 +1,4 @@
 import React from 'react';
-import mqtt from 'mqtt';
 import {
   PRAYER_ICONS,
   tldrText,
@@ -20,14 +19,13 @@ const PortraitKiosk = () => {
     peopleHome,
     prayerTimes,
     getMealsForDay,
-  } = useDashboardData(mqtt, { weatherDefaults: { temperature: '—', condition: 'Clear', feels_like: '—' } });
+  } = useDashboardData({ weatherDefaults: { temperature: '\u2014', condition: 'Clear', feels_like: '\u2014' } });
 
   return (
     <div style={styles.container}>
       <div style={styles.glowTopLeft}></div>
       <div style={styles.glowBottomRight}></div>
 
-      {/* HEADER SECTION */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <h1 style={styles.time}>{formatTime(currentTime, { showSeconds: true })}</h1>
@@ -43,10 +41,8 @@ const PortraitKiosk = () => {
         </div>
       </header>
 
-      {/* FIXED SCREEN GRID SYSTEM */}
-      <main className="responsive-layout-grid" style={styles.responsiveGrid}>
+      <main style={styles.responsiveGrid}>
 
-        {/* ROW 1: COMPACT HIERARCHICAL PRAYER TIME STRIP */}
         <section style={{ ...styles.glassCard, gridColumn: 'span 2', padding: '12px 16px' }}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #3b82f6, #06b6d4)' }}></div>
           <div style={styles.prayerHeader}>
@@ -67,7 +63,6 @@ const PortraitKiosk = () => {
           </div>
         </section>
 
-        {/* ROW 2: FULL WIDTH HORIZONTAL MEAL OUTLOOK */}
         <section style={{ ...styles.glassCard, gridColumn: 'span 2' }}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #10b981, #3b82f6)' }}></div>
           <h2 style={styles.cardTitle}>🍽️ Menu Outlook</h2>
@@ -97,7 +92,6 @@ const PortraitKiosk = () => {
           </div>
         </section>
 
-        {/* ROW 3 - LEFT: FAMILY SCHEDULE */}
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)' }}></div>
           <h2 style={styles.cardTitle}>📅 Family Schedule</h2>
@@ -122,7 +116,6 @@ const PortraitKiosk = () => {
           </div>
         </section>
 
-        {/* ROW 3 - RIGHT: GROCERY LIST */}
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #ec4899, #8b5cf6)' }}></div>
           <h2 style={styles.cardTitle}>🛒 Smart Grocery List</h2>
@@ -140,7 +133,6 @@ const PortraitKiosk = () => {
           </div>
         </section>
 
-        {/* ROW 4 - LEFT: STICKY NOTES */}
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #f59e0b, #ef4444)' }}></div>
           <h2 style={styles.cardTitle}>📋 Active Sticky Notes</h2>
@@ -161,7 +153,6 @@ const PortraitKiosk = () => {
           </div>
         </section>
 
-        {/* ROW 4 - RIGHT: STATUS TRACKING */}
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #06b6d4, #10b981)' }}></div>
           <h2 style={styles.cardTitle}>🏠 Status Tracking</h2>
@@ -188,30 +179,16 @@ const PortraitKiosk = () => {
 
       </main>
 
-      {/* CANVAS DISPLAY ENFORCEMENT */}
       <style>{`
-        ::-webkit-scrollbar {
-          display: none;
-        }
+        ::-webkit-scrollbar { display: none; }
         html, body {
-          margin: 0;
-          padding: 0;
+          margin: 0; padding: 0;
           overflow: hidden !important;
           height: 100vh;
           background-color: #030712;
         }
-        .responsive-layout-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr) !important;
-          grid-template-rows: 0.55fr 1.1fr 1.4fr 1.4fr !important;
-          gap: 16px;
-          flex: 1;
-          min-height: 0;
-          overflow: hidden;
-        }
       `}</style>
 
-      {/* FOOTER STATUS */}
       <footer style={styles.footerSync}>
         <div style={{ ...styles.syncDot, background: connected ? '#10b981' : '#ef4444' }}></div>
         {connected ? 'LIVE DISPATCH LINK ACTIVE' : 'RECONNECTING HUB CONTROLLER...'}
@@ -234,6 +211,16 @@ const styles = {
   tempText: { fontSize: '28px', fontWeight: '800', margin: 0 },
   condText: { color: '#6b7280', fontSize: '10px', fontWeight: '700', letterSpacing: '1.5px', marginTop: '2px' },
 
+  responsiveGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gridTemplateRows: '0.55fr 1.1fr 1.4fr 1.4fr',
+    gap: '16px',
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden'
+  },
+
   prayerHeader: { display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', gap: '6px', flexShrink: 0 },
   prayerTitleIcon: { fontSize: '16px', color: '#3b82f6' },
   prayerHeaderText: { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '4px' },
@@ -246,7 +233,6 @@ const styles = {
   prayerCardTime: { fontSize: '13px', fontWeight: '800', color: '#ffffff', letterSpacing: '-0.3px' },
   prayerCardName: { fontSize: '10px', color: '#9ca3af', fontWeight: '700', marginTop: '1px', textTransform: 'capitalize' },
 
-  responsiveGrid: { display: 'grid', gap: '16px', flex: 1, minHeight: 0 },
   glassCard: { position: 'relative', background: 'rgba(17, 24, 39, 0.45)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderRadius: '16px', padding: '16px', border: '1px solid rgba(255, 255, 255, 0.07)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)', display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' },
   cardAccentBar: { position: 'absolute', top: 0, left: 0, right: 0, height: '3px' },
   cardTitle: { fontSize: '14px', fontWeight: '700', margin: '0 0 12px 0', color: '#f3f4f6', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '-0.3px', flexShrink: 0 },
@@ -276,7 +262,6 @@ const styles = {
   presenceRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.02)', padding: '8px 12px', borderRadius: '8px', gap: '10px' },
   presenceStatus: { fontSize: '9px', fontWeight: '800', padding: '2px 6px', borderRadius: '5px', letterSpacing: '0.5px' },
 
-  // New Multiline styling block replacing single-line truncation locks
   bodyTextMultiLine: { fontSize: '13px', fontWeight: '500', color: '#e5e7eb', margin: 0, wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: '1.4' },
   emptyText: { color: '#4b5563', fontSize: '12px', fontStyle: 'italic', margin: 0 },
   footerSync: { marginTop: '12px', fontSize: '10px', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600', letterSpacing: '0.5px', flexShrink: 0 },

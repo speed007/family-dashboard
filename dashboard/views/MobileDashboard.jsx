@@ -1,5 +1,4 @@
 import React from 'react';
-import mqtt from 'mqtt';
 import {
   PRAYER_ICONS,
   tldrText,
@@ -20,14 +19,13 @@ const MobileDashboard = () => {
     peopleHome,
     prayerTimes,
     getMealsForDay,
-  } = useDashboardData(mqtt);
+  } = useDashboardData();
 
   return (
     <div style={styles.container}>
       <div style={styles.glowTopLeft}></div>
       <div style={styles.glowBottomRight}></div>
 
-      {/* HEADER BLOCK */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <h1 style={styles.time}>{formatTime(currentTime)}</h1>
@@ -42,10 +40,8 @@ const MobileDashboard = () => {
         </div>
       </header>
 
-      {/* RESPONSIVE CARD GRID */}
       <main style={styles.responsiveGrid}>
 
-        {/* PRAYER TIMES */}
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #3b82f6, #06b6d4)' }}></div>
           <h2 style={styles.cardTitle}>🕌 Prayer Times</h2>
@@ -59,7 +55,6 @@ const MobileDashboard = () => {
           </div>
         </section>
 
-        {/* MENU */}
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #10b981, #3b82f6)' }}></div>
           <h2 style={styles.cardTitle}>🍽️ Menu Outlook</h2>
@@ -85,7 +80,6 @@ const MobileDashboard = () => {
           </div>
         </section>
 
-        {/* SCHEDULE */}
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)' }}></div>
           <h2 style={styles.cardTitle}>📅 Family Schedule</h2>
@@ -110,7 +104,6 @@ const MobileDashboard = () => {
           </div>
         </section>
 
-        {/* GROCERIES */}
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #ec4899, #8b5cf6)' }}></div>
           <h2 style={styles.cardTitle}>🛒 Smart Grocery List</h2>
@@ -128,7 +121,6 @@ const MobileDashboard = () => {
           </div>
         </section>
 
-        {/* STICKY NOTES */}
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #f59e0b, #ef4444)' }}></div>
           <h2 style={styles.cardTitle}>📋 Active Sticky Notes</h2>
@@ -149,7 +141,6 @@ const MobileDashboard = () => {
           </div>
         </section>
 
-        {/* STATUS TRACKING */}
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #06b6d4, #10b981)' }}></div>
           <h2 style={styles.cardTitle}>🏠 Status Tracking</h2>
@@ -173,7 +164,6 @@ const MobileDashboard = () => {
 
       </main>
 
-      {/* SYNC FOOTER */}
       <footer style={styles.footerSync}>
         <div style={{ ...styles.syncDot, background: connected ? '#10b981' : '#ef4444' }}></div>
         {connected ? 'LIVE DISPATCH LINK ACTIVE' : 'RECONNECTING HUB CONTROLLER...'}

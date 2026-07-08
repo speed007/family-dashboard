@@ -1,5 +1,4 @@
-python-telegram-bot[job-queue]==20.3
-paho-mqtt==1.6.1
-python-dotenv==1.0.0
-requests==2.31.0
-icalendar==7.2.0
+python-telegram-bot[job-queue]==21.10
+paho-mqtt==2.1.0
+python-dotenv==1.1.0
+requests==2.32.3

@@ -6,7 +6,7 @@ Handles local storage for shopping lists, notes, meal plans, and custom appointm
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 DB_PATH = os.getenv("DB_PATH", "/data/dashboard.db")
 
@@ -35,6 +35,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 note_time TEXT NOT NULL,
                 text TEXT NOT NULL,
+                author TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             );
 
@@ -48,6 +49,13 @@ def init_db():
             """
         )
         conn.commit()
+
+    with _connect() as conn:
+        try:
+            conn.execute("ALTER TABLE daily_notes ADD COLUMN author TEXT NOT NULL DEFAULT ''")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
 
 @contextmanager
@@ -63,7 +71,7 @@ def _connect():
 
 
 def _now():
-    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    return datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z"
 
 
 # ---------------------------------------------------------------- Shopping
@@ -88,14 +96,6 @@ def get_shopping() -> list[str]:
 
 
 def delete_shopping_item(item_name: str) -> bool:
-    """
-    Deletes by exact case-insensitive match first. Only if nothing matches
-    exactly does it fall back to a substring match — and even then, only
-    the single most-recently-added matching item is removed, rather than
-    every item that happens to contain the fragment (e.g. "remove milk"
-    should not also delete "chocolate milk" if an exact "milk" existed,
-    and should remove at most one fuzzy match, not all of them).
-    """
     target = item_name.lower().strip()
     with _connect() as conn:
         cursor = conn.execute("DELETE FROM shopping_items WHERE item_lower = ?", (target,))
@@ -152,30 +152,20 @@ def clear_meals():
 
 # --------------------------------------------------------------------- Notes
 
-def add_daily_note(text: str, author: str):
-    note_time = datetime.now().strftime("%H:%M")
-    full_text = f"{text} (by {author})" if author else text
+def add_daily_note(text: str, author: str = ""):
+    note_time = datetime.now(timezone.utc).strftime("%H:%M")
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO daily_notes (note_time, text, created_at) VALUES (?, ?, ?)",
-            (note_time, full_text, _now()),
+            "INSERT INTO daily_notes (note_time, text, author, created_at) VALUES (?, ?, ?, ?)",
+            (note_time, text, author, _now()),
         )
         conn.commit()
 
 
 def get_daily_notes() -> list[dict]:
-    """
-    NOTE on 'index': this is a display-only position (1, 2, 3...) recomputed
-    fresh on every call — it is NOT a stable identifier. It's fine for a
-    single-user "list notes" -> "delete note 2" flow done in quick
-    succession, but if two people add/remove notes concurrently between the
-    list and the delete, the index can point at a different note than the
-    one the user saw. delete_note_by_index() re-fetches immediately before
-    deleting to narrow (not eliminate) this window.
-    """
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, note_time AS time, text FROM daily_notes ORDER BY id ASC"
+            "SELECT id, note_time AS time, text, author FROM daily_notes ORDER BY id ASC"
         ).fetchall()
         notes_list = []
         for index, row in enumerate(rows, start=1):
@@ -223,7 +213,6 @@ def add_appointment(title: str, date: str | None = None, time: str | None = None
 
 
 def get_appointments() -> list[dict]:
-    """Same 'index is not a stable id' caveat as get_daily_notes() above."""
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, title, date, time FROM appointments "
@@ -258,8 +247,7 @@ def delete_appointment_by_text(fragment: str) -> bool:
 
 
 def prune_expired_appointments():
-    """Removes all explicit scheduled calendar events dated strictly prior to today."""
-    today_iso = datetime.now().strftime("%Y-%m-%d")
+    today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with _connect() as conn:
         conn.execute("DELETE FROM appointments WHERE date IS NOT NULL AND date < ?", (today_iso,))
         conn.commit()

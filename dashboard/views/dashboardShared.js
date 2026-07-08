@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-
-// ---- Shared static data ----
+import mqtt from 'mqtt';
 
 export const WEEKLY_MEAL_PLAN = {
   monday: ["Moong Daal - Mugdhon", "Yellow moong Daal", "Kitchdi - Ringru/KARI-Potatoe", "Khatta binda", "KIDNEY BEANS", "SARAGWO"],
@@ -12,7 +11,7 @@ export const WEEKLY_MEAL_PLAN = {
   sunday: ["Chip - burger @ Home", "Noodles", "Kebab roll", "Take out"]
 };
 
-export const PRAYER_ICONS = { Fajr: '🌅', Dhuhr: '☀️', Asr: '🌤️', Maghrib: '🌇', Isha: '🌙' };
+export const PRAYER_ICONS = { Fajr: '\uD83C\uDF05', Dhuhr: '\u2600\uFE0F', Asr: '\uD83C\uDF24\uFE0F', Maghrib: '\uD83C\uDF07', Isha: '\uD83C\uDF19' };
 
 export const DEFAULT_PEOPLE_HOME = { 'Father': 'Home', 'Mother': 'Work', 'Kids': 'School' };
 
@@ -35,7 +34,6 @@ const MQTT_TOPICS = [
   'home/dashboard/prayer_times'
 ];
 
-// Generous maximum length boundary fallback to preserve screen layout structure
 export const tldrText = (text, maxLength = 120) => {
   if (!text) return '';
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
@@ -52,8 +50,6 @@ export const formatTime = (date, { showSeconds = false } = {}) =>
 export const formatDate = (date) =>
   new Intl.DateTimeFormat('en-GB', { weekday: 'long', month: 'short', day: 'numeric' }).format(date);
 
-// ---- Clock ----
-// Ticks once a second and derives today/tomorrow's day names for meal lookups.
 export function useClock() {
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -70,16 +66,13 @@ export function useClock() {
   return { currentTime, todayDayName, tomorrowDayName };
 }
 
-// ---- MQTT-backed dashboard data ----
-// Connects once, subscribes to every dashboard topic, and exposes derived state.
-// `mqtt` is passed in (rather than imported here) so both views share one connection setup.
-export function useDashboardData(mqtt, { weatherDefaults } = {}) {
+export function useDashboardData({ weatherDefaults } = {}) {
   const [shoppingList, setShoppingList] = useState([]);
   const [haAppointments, setHaAppointments] = useState([]);
   const [manualAppointments, setManualAppointments] = useState([]);
   const [meals, setMeals] = useState({});
   const [notes, setNotes] = useState([]);
-  const [weather, setWeather] = useState(weatherDefaults || { temperature: '—', condition: 'Clear' });
+  const [weather, setWeather] = useState(weatherDefaults || { temperature: '\u2014', condition: 'Clear' });
   const [connected, setConnected] = useState(false);
   const [peopleHome, setPeopleHome] = useState(DEFAULT_PEOPLE_HOME);
   const [prayerTimes, setPrayerTimes] = useState(DEFAULT_PRAYER_TIMES);
@@ -90,9 +83,7 @@ export function useDashboardData(mqtt, { weatherDefaults } = {}) {
 
   useEffect(() => {
     if (!MQTT_BROKER) {
-      // Fails loudly instead of silently trying to connect to `undefined` —
-      // usually means .env is missing or wasn't picked up at build time.
-      console.error('Missing VITE_MQTT_BROKER_WS — check your .env file (see .env.example)');
+      console.error('Missing VITE_MQTT_BROKER_WS \u2014 check your .env file (see .env.example)');
       return;
     }
 
