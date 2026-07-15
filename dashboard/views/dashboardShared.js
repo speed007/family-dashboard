@@ -129,9 +129,12 @@ export function useDashboardData({ weatherDefaults } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const appointments = [...haAppointments, ...manualAppointments].sort((a, b) =>
-    (a.date || '9999-99-99').localeCompare(b.date || '9999-99-99')
-  );
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const appointments = [...haAppointments, ...manualAppointments]
+    .filter(a => !a.date || a.date >= todayStr)
+    .sort((a, b) =>
+      (a.date || '9999-99-99').localeCompare(b.date || '9999-99-99')
+    );
 
   const getMealsForDay = (dayKey, dayName) => {
     if (meals && meals[dayKey]) {

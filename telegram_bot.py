@@ -509,6 +509,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
 
+async def _periodic_cleanup(context: ContextTypes.DEFAULT_TYPE):
+    db.prune_expired_appointments()
+    publish_shopping()
+    publish_meals()
+    publish_notes()
+    publish_appointments()
+
+
 def main():
     db.init_db()
     logger.info(f"SQLite database ready at {db.DB_PATH}")
@@ -524,6 +532,7 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.job_queue.run_repeating(_periodic_cleanup, interval=900, first=300)
 
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
