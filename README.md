@@ -17,7 +17,7 @@ You can also run on an old pc/laptop. The project really doesnt need much resour
 
 ## ⚡ Architecture Overview
 
-* **🖥️ Kiosk Interface (`/kiosk`):** Hard-locked portrait dimension configuration tailored perfectly for a dedicated vertical 1080p monitor.
+* **🖥️ Kiosk Interface (`/kiosk`):** Hard-locked portrait dimension configuration tailored perfectly for a dedicated vertical 1080p monitor. A Pi Zero 2W with an LD2420 mmWave presence sensor can automatically turn the screen on/off via HDMI (see [Presence-Aware Screen Control](#presence-aware-screen-control) below).
 * **📱 Mobile Web Client (`/dashboard`):** Fluid, glassmorphic (`backdrop-filter`) auto-wrapping card array matching the kiosk aesthetic while adjusting flawlessly to handheld touch screens.
 * **🤖 Telegram Bot Dispatcher:** A Python-driven SQLite backend layer acting as a remote management pipeline. Interacts with the family on the go to inject custom sticky notes, manipulate real-time grocery lists, and handle calendar adjustments.
 * **📡 Async MQTT Service Broker:** The real-time messaging highway utilizing Mosquitto to stream state changes across layouts instantly.
@@ -73,10 +73,10 @@ VITE_MQTT_PASS=your_mqtt_password
 
 3. Build Frontend Assets & Start Containers
 
-Build the React app (using pnpm or npm):
+Build the React app (npm — the Pi Zero 2W ships with Node v20, pnpm requires ≥v22):
 
 ```
-cd dashboard && pnpm install && pnpm build && cd ..
+cd dashboard && npm install && npm run build && cd ..
 ```
 
 Then copy `meal_plan.json-example` to `meal_plan.json` and update with your weekly meal plan.
@@ -90,6 +90,81 @@ docker compose up -d --build
 ## 📡 Integrations
 
 Home Assistant YAML example files are provided in the `HomeAssistant/` folder. Copy them into your HA configuration and update entity IDs for your own devices.
+
+## 👤 Presence-Aware Screen Control (Pi Zero 2W Kiosk)
+
+The repo includes a Python daemon that reads an **LD2420 mmWave presence sensor** via UART and controls the kiosk screen HDMI power based on proximity.
+
+### Wiring
+
+| LD2420 | Pi Zero 2W |
+|--------|-----------|
+| VIN | Pin 2 (5V) |
+| GND | Pin 6 (GND) |
+| OT1 (TX) | Pin 8 (GPIO14 / TXD) |
+| RX | Pin 10 (GPIO15 / RXD) |
+
+> The LD2420 module has an onboard voltage regulator — use **5V**, not 3.3V.
+
+### Enable UART on DietPi
+
+```bash
+# In /boot/config.txt, add:
+echo "enable_uart=1" | sudo tee -a /boot/config.txt
+echo "dtoverlay=disable-bt" | sudo tee -a /boot/config.txt
+
+# Disable Bluetooth serial
+sudo systemctl disable hciuart
+
+# Reboot
+sudo reboot
+```
+
+After reboot, `/dev/serial0` should exist.
+
+### Install & configure
+
+```bash
+cd ~/family-dashboard
+
+# Install Python deps
+pip install pyserial paho-mqtt
+
+# Copy and edit config
+cp presence_config.env.example presence_config.env
+nano presence_config.env
+```
+
+Set your MQTT broker IP and credentials in `presence_config.env`.
+
+### Test
+
+```bash
+python3 presence_daemon.py
+```
+
+Stand in front of the sensor — logs show `target=True dist=42 screen=on`. Walk away — after 60s, `screen=off`.
+
+### Auto-start on boot
+
+```bash
+sudo cp presence-daemon.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable presence-daemon
+sudo systemctl start presence-daemon
+```
+
+### Behaviour
+
+| Condition | Screen |
+|-----------|--------|
+| Person within 50 cm | Turns ON immediately |
+| Person stays present | Stays ON |
+| Person leaves | 60 s countdown starts |
+| No presence for 60 s | Turns OFF |
+| Person returns during countdown | Countdown cancelled, stays ON |
+
+The daemon publishes to `home/dashboard/kitchen/presence` over MQTT so the dashboard can also display presence status in real time.
 
 ## 🤖 Here is the complete list of triggers and keywords to use with your Telegram Bot.
 
