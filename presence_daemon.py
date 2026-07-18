@@ -162,10 +162,10 @@ class PresenceController:
             self._cancel_timer()
             if not self.screen_on:
                 self._turn_screen_on()
-        else:
-            if self.has_target:
-                self.has_target = False
-                self.distance = 0
+        elif self.screen_on:
+            self.has_target = False
+            self.distance = 0
+            if not self._off_timer:
                 logger.info("Presence lost — starting %ds timer", self.screen_timeout)
                 self._start_off_timer()
 
