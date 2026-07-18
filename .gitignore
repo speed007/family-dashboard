@@ -2,6 +2,8 @@
 .env
 .deploy_key
 .deploy_key.pub
+.lxc_key
+.lxc_key.pub
 *.db
 secrets.json
 meal_plan.json

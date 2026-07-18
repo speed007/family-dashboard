@@ -77,7 +77,7 @@ export function useDashboardData({ weatherDefaults } = {}) {
   const [connected, setConnected] = useState(false);
   const [peopleHome, setPeopleHome] = useState(DEFAULT_PEOPLE_HOME);
   const [prayerTimes, setPrayerTimes] = useState(DEFAULT_PRAYER_TIMES);
-  const [screenOn, setScreenOn] = useState(true);
+  const [screenOn, setScreenOn] = useState(false);
 
   const MQTT_BROKER = import.meta.env.VITE_MQTT_BROKER_WS;
   const MQTT_USER = import.meta.env.VITE_MQTT_USER;
