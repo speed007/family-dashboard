@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""Presence daemon for LD2420 mmWave radar sensor via UART on Pi Zero 2W.
-
-Connects LD2420 → Pi UART (GPIO14/15), publishes to MQTT,
-controls HDMI power via vcgencmd with configurable off-delay.
-
-Wiring:
-    LD2420 VIN  → Pi Pin 2 (5V)
-    LD2420 GND  → Pi Pin 6 (GND)
-    LD2420 OT1  → Pi Pin 8 (GPIO14/TXD)
-    LD2420 RX   → Pi Pin 10 (GPIO15/RXD)
-"""
-
 import json
 import logging
 import os
@@ -27,19 +15,10 @@ logger = logging.getLogger("presence_daemon")
 
 
 class SerialReader:
-    """Read and parse LD2420 frames from serial port at 115200 baud.
+    HEADER = b"\xf4\xf3\xf2\xf1"
+    FOOTER = b"\xf8\xf7\xf6\xf5"
 
-    Frame format:
-        [0xAA, 0xAA] [cmd:1] [len:1] [data...] [checksum:1]
-    Data frame (cmd=0x01) payload:
-        [has_target:1] [distance_low:1] [distance_high:1] [...]
-    Checksum: (sum of cmd + len + data + checksum) & 0xFF == 0
-    """
-
-    HEADER = b"\xaa\xaa"
-    FRAME_RATE_LIMIT = 1.0 / 50
-
-    def __init__(self, port, baud=115200, timeout=0.1):
+    def __init__(self, port, baud=256000, timeout=0.1):
         self.port = port
         self.baud = baud
         self.timeout = timeout
@@ -65,9 +44,8 @@ class SerialReader:
             self.ser.close()
 
     def read_frame(self):
-        """Return (has_target: bool, distance: int) or None."""
         now = time.time()
-        if now - self._last_read < self.FRAME_RATE_LIMIT:
+        if now - self._last_read < 1.0 / 50:
             return None
         self._last_read = now
 
@@ -80,43 +58,63 @@ class SerialReader:
 
         self._buf.extend(chunk)
 
-        while len(self._buf) >= 4:
+        while len(self._buf) >= 10:
             idx = self._buf.find(self.HEADER)
             if idx == -1:
-                leftover = 1 if self._buf[-1:] == b"\xaa" else 0
-                self._buf = self._buf[-leftover:] if leftover else bytearray()
+                self._buf = bytearray()
                 return None
             if idx > 0:
                 del self._buf[:idx]
 
-            data_len = int(self._buf[3])
-            total = 4 + data_len + 1
+            if len(self._buf) < 10:
+                return None
 
+            data_len = self._buf[4] | (self._buf[5] << 8)
+            if data_len < 6 or data_len > 100:
+                del self._buf[:6]
+                continue
+
+            total = 6 + data_len + 4
             if len(self._buf) < total:
                 return None
 
             frame = bytes(self._buf[:total])
             del self._buf[:total]
 
-            if (sum(frame[2:]) & 0xFF) != 0:
+            if frame[-4:] != self.FOOTER:
                 continue
 
-            cmd = frame[2]
-            if cmd == 0x01 and data_len >= 3:
-                return (bool(frame[4]), frame[5] | (frame[6] << 8))
+            data = frame[6:-4]
+
+            if data[0] != 1 and data[0] != 2:
+                continue
+            if data[1] != 0xAA:
+                continue
+
+            bd = data[2:11]
+            target_status = bd[0]
+            moving_dist = bd[1] | (bd[2] << 8)
+            moving_energy = bd[3]
+            static_dist = bd[4] | (bd[5] << 8)
+            static_energy = bd[6]
+            has_target = target_status in (1, 2, 3)
+            dist = moving_dist if moving_dist > 0 else static_dist
+
+            return (has_target, dist, moving_energy, static_energy, target_status)
 
         return None
 
 
 class PresenceController:
-    """Manages presence state, HDMI power, and MQTT publishing."""
-
     def __init__(self, mqtt_broker, mqtt_port, mqtt_user, mqtt_pass,
                  screen_timeout=60, distance_threshold=50):
         self.screen_timeout = screen_timeout
         self.distance_threshold = distance_threshold
         self.has_target = False
         self.distance = 0
+        self.moving_energy = 0
+        self.still_energy = 0
+        self.detection_state = 0
         self.last_known_distance = 0
         self.screen_on = True
         self._off_timer = None
@@ -135,7 +133,11 @@ class PresenceController:
         except Exception as e:
             logger.error(f"MQTT connection failed: {e}")
 
-    def update(self, has_target, distance):
+    def update(self, has_target, distance, moving_energy, still_energy, state):
+        self.moving_energy = moving_energy
+        self.still_energy = still_energy
+        self.detection_state = state
+
         if has_target:
             self.has_target = True
             if distance > 0:
@@ -151,8 +153,8 @@ class PresenceController:
                 self._turn_screen_on()
 
             logger.info(
-                "target=%s dist=%d last_known=%d screen=%s",
-                has_target, distance, self.last_known_distance,
+                "target=%s dist=%d moving_e=%d still_e=%d state=%d screen=%s",
+                has_target, distance, moving_energy, still_energy, state,
                 "on" if self.screen_on else "off",
             )
         else:
@@ -181,6 +183,9 @@ class PresenceController:
             json.dumps({
                 "presence": self.has_target,
                 "distance": self.distance,
+                "moving_energy": self.moving_energy,
+                "still_energy": self.still_energy,
+                "detection_state": self.detection_state,
                 "status": status,
                 "screen": "on" if self.screen_on else "off",
             }),
@@ -267,12 +272,13 @@ def main():
     mqtt_user = os.environ.get("MQTT_USER", "")
     mqtt_pass = os.environ.get("MQTT_PASS", "")
     serial_port = os.environ.get("SERIAL_PORT", "/dev/serial0")
+    serial_baud = int(os.environ.get("SERIAL_BAUD", 256000))
     screen_timeout = int(os.environ.get("SCREEN_TIMEOUT", 60))
     distance_threshold = int(os.environ.get("DISTANCE_THRESHOLD", 50))
 
     logger.info(
-        "Starting — serial=%s timeout=%ds threshold=%dcm mqtt=%s:%s",
-        serial_port, screen_timeout, distance_threshold,
+        "Starting — serial=%s baud=%d timeout=%ds threshold=%dcm mqtt=%s:%s",
+        serial_port, serial_baud, screen_timeout, distance_threshold,
         mqtt_broker, mqtt_port,
     )
 
@@ -293,8 +299,8 @@ def main():
     while controller._running:
         reader = None
         try:
-            reader = SerialReader(serial_port)
-            logger.info("Serial connected on %s", serial_port)
+            reader = SerialReader(serial_port, baud=serial_baud)
+            logger.info("Serial connected on %s @ %d baud", serial_port, serial_baud)
             while controller._running:
                 result = reader.read_frame()
                 if result:
