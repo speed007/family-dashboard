@@ -235,6 +235,7 @@ class PresenceController:
         self._release_counter = 0
         self._last_pub = {}
         self._discovery_sent = False
+        self._min_on_until = 0.0
 
         self._mqtt = mqtt.Client()
         if mqtt_user:
@@ -356,11 +357,15 @@ class PresenceController:
             self._release_counter += 1
 
         if self._detect_counter >= self.confirm_frames:
+            if not self.has_target:
+                self._set_screen(True)
             self.has_target = True
             self.last_detection_time = time.time()
             self.last_known_distance = distance
             self.distance = distance
         elif self._release_counter >= self.release_frames:
+            if self.has_target:
+                self._set_screen(False)
             self.has_target = False
             self.distance = 0
 
@@ -429,14 +434,21 @@ class PresenceController:
             retain=True,
         )
 
-    def _set_screen(self, on):
+    def _set_screen(self, on, force=False):
+        if on:
+            self._min_on_until = time.time() + 60
+        elif not force and time.time() < self._min_on_until:
+            logger.info("Screen OFF blocked — min on-time (%.1fs left)",
+                        self._min_on_until - time.time())
+            self.screen_on = True
+            return
         self.screen_on = on
         self._publish_on_change()
         if self._hdmi_power:
             cmd = "echo 'on 0' | cec-client -s -d 1" if on else "echo 'standby 0' | cec-client -s -d 1"
             ret = os.system(cmd + " >/dev/null 2>&1")
             logger.info("CEC power %s (exit=%d)", "ON" if on else "OFF", ret)
-        logger.info("Screen turned %s (MQTT command)", "ON" if on else "OFF")
+        logger.info("Screen turned %s", "ON" if on else "OFF")
 
     def _on_mqtt_connect(self, client, userdata, flags, rc):
         if rc == 0:
@@ -456,9 +468,9 @@ class PresenceController:
         payload = msg.payload.decode().strip().upper()
         if msg.topic == "home/dashboard/kitchen/screen/set":
             if payload == "ON":
-                self._set_screen(True)
+                self._set_screen(True, force=True)
             elif payload == "OFF":
-                self._set_screen(False)
+                self._set_screen(False, force=True)
 
     def shutdown(self):
         self._running = False

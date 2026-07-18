@@ -93,7 +93,7 @@ Home Assistant YAML example files are provided in the `HomeAssistant/` folder. C
 
 ## 👤 Presence-Aware Screen Control (Pi Zero 2W Kiosk)
 
-The repo includes a Python daemon that reads an **LD2420 mmWave presence sensor** via UART and controls the kiosk screen HDMI power based on proximity.
+The repo includes a Python daemon that reads an **LD2420 mmWave presence sensor** via UART and controls the kiosk monitor power via **HDMI-CEC** based on proximity. It also publishes presence state to MQTT and subscribes to `home/dashboard/kitchen/screen/set` for optional Home Assistant override.
 
 ### Wiring
 
@@ -135,7 +135,10 @@ cp presence_config.env.example presence_config.env
 nano presence_config.env
 ```
 
-Set your MQTT broker IP and credentials in `presence_config.env`.
+Set your MQTT broker IP, credentials, and enable HDMI-CEC in `presence_config.env`:
+```
+HDMI_POWER_CONTROL=true
+```
 
 ### Test
 
@@ -143,7 +146,7 @@ Set your MQTT broker IP and credentials in `presence_config.env`.
 python3 presence_daemon.py
 ```
 
-Stand in front of the sensor — logs show `target=True dist=42 screen=on`. Walk away — after 60s, `screen=off`.
+Stand in front of the sensor — logs show `target=True dist=30 screen=on`. Walk away — screen turns OFF after ~2s release delay (respecting a 60s minimum on-time to prevent flickering).
 
 ### Auto-start on boot
 
@@ -158,13 +161,20 @@ sudo systemctl start presence-daemon
 
 | Condition | Screen |
 |-----------|--------|
-| Person within 50 cm | Turns ON immediately |
+| Person detected within range | Turns ON via CEC (~2s) |
 | Person stays present | Stays ON |
-| Person leaves | 60 s countdown starts |
-| No presence for 60 s | Turns OFF |
-| Person returns during countdown | Countdown cancelled, stays ON |
+| Person leaves | Turns OFF after ~2s release delay (minimum 60s on-time enforced) |
+| MQTT `ON`/`OFF` command received | Home Assistant override (bypasses min on-time) |
 
-The daemon publishes to `home/dashboard/kitchen/presence` over MQTT so the dashboard can also display presence status in real time.
+### MQTT topics
+
+| Topic | Direction | Payload |
+|-------|-----------|---------|
+| `home/dashboard/kitchen/presence` | Daemon publishes | `{"presence": true/false, "distance": 30, ...}` |
+| `home/dashboard/kitchen/screen/set` | Daemon subscribes | `ON` or `OFF` |
+| `homeassistant/binary_sensor/kitchen_presence_ld2420/config` | MQTT Discovery | HA entity definition |
+
+The daemon publishes 12 MQTT Discovery entities (binary sensor, distance, moving/still energy, detection state, status, gate energies 0–2).
 
 ## 🤖 Here is the complete list of triggers and keywords to use with your Telegram Bot.
 
