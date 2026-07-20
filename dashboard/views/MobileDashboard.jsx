@@ -190,8 +190,8 @@ const styles = {
   responsiveGrid: { display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '16px', width: '100%' },
   glassCard: { position: 'relative', background: 'rgba(17, 24, 39, 0.45)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderRadius: '16px', padding: '16px', border: '1px solid rgba(255, 255, 255, 0.07)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)', display: 'flex', flexDirection: 'column', flex: '1 1 320px', boxSizing: 'border-box', overflow: 'hidden' },
   cardAccentBar: { position: 'absolute', top: 0, left: 0, right: 0, height: '3px' },
-  cardTitle: { fontSize: '13px', fontWeight: '700', margin: '0 0 12px 0', color: '#f3f4f6', textTransform: 'uppercase', letterSpacing: '0.5px' },
-  subTitle: { fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '0.5px', fontWeight: '700', marginBottom: '8px' },
+  cardTitle: { fontSize: '16px', fontWeight: '700', margin: '0 0 12px 0', color: '#f3f4f6', textTransform: 'uppercase', letterSpacing: '0.5px' },
+  subTitle: { fontSize: '13px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '0.5px', fontWeight: '700', marginBottom: '8px' },
 
   prayerMobileGrid: { display: 'flex', flexDirection: 'column', gap: '8px' },
   prayerBadge: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '10px' },
@@ -220,8 +220,8 @@ const styles = {
   presenceRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.02)', padding: '8px 12px', borderRadius: '8px' },
   presenceStatus: { fontSize: '9px', fontWeight: '800', padding: '2px 6px', borderRadius: '5px', letterSpacing: '0.3px' },
 
-  bodyText: { fontSize: '13px', fontWeight: '500', color: '#e5e7eb', margin: 0, wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: '1.4' },
-  emptyText: { color: '#4b5563', fontSize: '12px', fontStyle: 'italic', margin: 0 },
+  bodyText: { fontSize: '16px', fontWeight: '500', color: '#e5e7eb', margin: 0, wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: '1.4' },
+  emptyText: { color: '#4b5563', fontSize: '14px', fontStyle: 'italic', margin: 0 },
   footerSync: { marginTop: '24px', fontSize: '9px', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600', letterSpacing: '0.5px' },
   syncDot: { width: '6px', height: '6px', borderRadius: '50%' }
 };
