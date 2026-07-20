@@ -211,10 +211,10 @@ class SerialReader:
 
 class PresenceController:
     def __init__(self, mqtt_broker, mqtt_port, mqtt_user, mqtt_pass,
-                 distance_threshold=200, still_energy_threshold=50,
-                 confirm_frames=10, release_frames=10,
+                  distance_threshold=200, still_energy_threshold=50,
+                  confirm_frames=5, release_frames=10,
                  discovery_prefix="homeassistant", device_id="ld2420_kitchen",
-                 hdmi_power=False):
+                 hdmi_power=False, min_on_time=60):
         self.distance_threshold = distance_threshold
         self.still_energy_threshold = still_energy_threshold
         self.confirm_frames = confirm_frames
@@ -222,6 +222,7 @@ class PresenceController:
         self.discovery_prefix = discovery_prefix
         self.device_id = device_id
         self._hdmi_power = hdmi_power
+        self._min_on_time = min_on_time
 
         self.has_target = False
         self.distance = 0
@@ -230,7 +231,7 @@ class PresenceController:
         self.detection_state = 0
         self.last_known_distance = 0
         self.last_detection_time = 0.0
-        self.screen_on = True
+        self.screen_on = False
         self.moving_gate_energies = [0] * NUM_GATES
         self.static_gate_energies = [0] * NUM_GATES
         self._running = True
@@ -239,7 +240,9 @@ class PresenceController:
         self._last_pub = {}
         self._discovery_sent = False
         self._min_on_until = 0.0
-
+        self._pending_off = False
+        self._cec_thread = None
+        self._cec_cmd = None
         self._mqtt = mqtt.Client()
         if mqtt_user:
             self._mqtt.username_pw_set(mqtt_user, mqtt_pass)
@@ -350,7 +353,7 @@ class PresenceController:
         if static_gates:
             self.static_gate_energies = list(static_gates) + [0] * max(0, NUM_GATES - len(static_gates))
 
-        valid_target = has_target and (moving_energy >= 20 or still_energy >= self.still_energy_threshold)
+        valid_target = (still_energy >= self.still_energy_threshold)
 
         if valid_target:
             self._release_counter = 0
@@ -371,6 +374,9 @@ class PresenceController:
                 self._set_screen(False)
             self.has_target = False
             self.distance = 0
+
+        if self._pending_off and not self.has_target and time.time() >= self._min_on_until:
+            self._set_screen(False)
 
         self._log_sampler = getattr(self, '_log_sampler', 0) + 1
         if self._log_sampler % 10 == 0 or self._changed("_lp_target", self.has_target):
@@ -439,18 +445,27 @@ class PresenceController:
 
     def _set_screen(self, on, force=False):
         if on:
-            self._min_on_until = time.time() + 60
+            self._min_on_until = time.time() + self._min_on_time
         elif not force and time.time() < self._min_on_until:
             logger.info("Screen OFF blocked — min on-time (%.1fs left)",
                         self._min_on_until - time.time())
             self.screen_on = True
+            self._pending_off = True
             return
         self.screen_on = on
+        self._pending_off = False
         self._publish_on_change()
         if self._hdmi_power:
-            cmd = "echo 'on 0' | cec-client -s -d 1" if on else "echo 'standby 0' | cec-client -s -d 1"
-            ret = os.system(cmd + " >/dev/null 2>&1")
-            logger.info("CEC power %s (exit=%d)", "ON" if on else "OFF", ret)
+            if self._cec_thread and self._cec_thread.is_alive():
+                if self._cec_cmd == on:
+                    return
+            self._cec_cmd = on
+            cmd = "echo '" + ("on" if on else "standby") + " 0' | cec-client -s >/dev/null 2>&1"
+            def _run_cec():
+                ret = os.system(cmd)
+                logger.info("CEC power %s (exit=%d)", "ON" if on else "OFF", ret)
+            self._cec_thread = threading.Thread(target=_run_cec, daemon=True)
+            self._cec_thread.start()
         logger.info("Screen turned %s", "ON" if on else "OFF")
 
     def _on_mqtt_connect(self, client, userdata, flags, rc):
@@ -498,7 +513,7 @@ def main():
     serial_baud = int(os.environ.get("SERIAL_BAUD", 256000))
     distance_threshold = int(os.environ.get("DISTANCE_THRESHOLD", 200))
     still_energy_threshold = int(os.environ.get("STILL_ENERGY_THRESHOLD", 50))
-    confirm_frames = int(os.environ.get("CONFIRM_FRAMES", 10))
+    confirm_frames = int(os.environ.get("CONFIRM_FRAMES", 5))
     release_frames = int(os.environ.get("RELEASE_FRAMES", 10))
     max_gate = int(os.environ.get("MAX_GATE", 2))
     gate0_moving = int(os.environ.get("GATE0_MOVING", 30))
@@ -506,14 +521,16 @@ def main():
     discovery_prefix = os.environ.get("MQTT_DISCOVERY_PREFIX", "homeassistant")
     device_id = os.environ.get("MQTT_DEVICE_ID", "ld2420_kitchen")
     hdmi_power = os.environ.get("HDMI_POWER_CONTROL", "").lower() in ("1", "true", "yes")
+    min_on_time = int(os.environ.get("MIN_ON_TIME", 60))
 
     logger.info(
         "Starting — serial=%s baud=%d threshold=%dcm mqtt=%s:%s "
-        "confirm=%d release=%d gate=%d g0_mv=%d g0_st=%d still_thresh=%d disc=%s hdmi=%s",
+        "confirm=%d release=%d gate=%d g0_mv=%d g0_st=%d "
+        "still_thresh=%d disc=%s hdmi=%s min_on=%d",
         serial_port, serial_baud, distance_threshold,
         mqtt_broker, mqtt_port, confirm_frames, release_frames,
         max_gate, gate0_moving, gate0_static, still_energy_threshold,
-        discovery_prefix, hdmi_power,
+        discovery_prefix, hdmi_power, min_on_time,
     )
 
     controller = PresenceController(
@@ -525,6 +542,7 @@ def main():
         discovery_prefix=discovery_prefix,
         device_id=device_id,
         hdmi_power=hdmi_power,
+        min_on_time=min_on_time,
     )
 
     def signal_handler(signum, frame):
