@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 import logging
@@ -5,6 +6,7 @@ import json
 import requests
 import re
 import signal
+import threading
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import paho.mqtt.client as mqtt
@@ -123,12 +125,15 @@ def publish_to_dashboard(topic: str, payload_dict: dict):
         logger.warning(f"MQTT client not connected — cannot publish to {topic}")
         return
     try:
-        _mqtt_client.publish(topic, json.dumps(payload_dict), qos=1, retain=True)
+        _mqtt_client.publish(topic, json.dumps(payload_dict), qos=0, retain=True)
     except Exception as e:
         logger.error(f"MQTT publish failure on topic {topic}: {e}")
 
 
 # ---------- Signal handling ----------
+
+def _background_ha_call(func, *args):
+    threading.Thread(target=func, args=args, daemon=True).start()
 
 def _signal_handler(sig, frame):
     logger.info(f"Received signal {sig} — shutting down gracefully...")
@@ -391,7 +396,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             note_content = note_match.group(1).strip()
             db.add_daily_note(note_content, user_name)
             await update.message.reply_text(f"Note posted: \"{note_content}\"")
-            trigger_ha_note_event(note_content, user_name)
+            _background_ha_call(trigger_ha_note_event, note_content, user_name)
             publish_notes()
             return
 
@@ -461,7 +466,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif db.delete_shopping_item(remaining):
                 await update.message.reply_text(f"Removed '{remaining}' from shopping list.")
                 publish_shopping()
-                sync_shopping_to_ha(remaining, "remove")
+                _background_ha_call(sync_shopping_to_ha, remaining, "remove")
             else:
                 await update.message.reply_text(f"'{remaining}' is not on the shopping list.")
             return
@@ -500,7 +505,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             db.add_appointment(title_val, date=date_val, time=time_val)
             publish_appointments()
-            push_appointment_to_ha_calendar(title_val, date_val, time_val)
+            _background_ha_call(push_appointment_to_ha_calendar, title_val, date_val, time_val)
             display_when = f"on {date_val}" if date_val else "unscheduled"
             if time_val:
                 display_when += f" at {time_val}"
@@ -520,7 +525,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if db.add_shopping(item_to_add):
                 await update.message.reply_text(f"Added '{item_to_add}' to shopping list.")
                 publish_shopping()
-                sync_shopping_to_ha(item_to_add, "add")
+                _background_ha_call(sync_shopping_to_ha, item_to_add, "add")
             else:
                 await update.message.reply_text(f"'{item_to_add}' is already on the list!")
             return
