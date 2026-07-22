@@ -95,6 +95,24 @@ def get_shopping() -> list[str]:
         return [r["item"] for r in rows]
 
 
+def get_shopping_with_ids() -> list[dict]:
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT id, item FROM shopping_items ORDER BY id ASC"
+        ).fetchall()
+
+
+def delete_shopping_item_by_index(list_index: int) -> bool:
+    items = get_shopping_with_ids()
+    if list_index < 1 or list_index > len(items):
+        return False
+    target_id = items[list_index - 1]["id"]
+    with _connect() as conn:
+        conn.execute("DELETE FROM shopping_items WHERE id = ?", (target_id,))
+        conn.commit()
+        return True
+
+
 def delete_shopping_item(item_name: str) -> bool:
     target = item_name.lower().strip()
     with _connect() as conn:

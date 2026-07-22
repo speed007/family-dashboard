@@ -140,11 +140,13 @@ def _signal_handler(sig, frame):
 
 def parse_uk_date(date_str: str) -> str | None:
     cleaned = date_str.replace('.', '-').replace('/', '-')
-    match = re.match(r"^(\d{1,2})-(\d{1,2})-(\d{2,4})$", cleaned)
+    match = re.match(r"^(\d{1,2})-(\d{1,2})(?:-(\d{2,4}))?$", cleaned)
     if not match:
         return None
     day, month, year = match.groups()
-    if len(year) == 2:
+    if year is None:
+        year = str(datetime.now().year)
+    elif len(year) == 2:
         year = f"20{year}"
     try:
         validated_date = datetime(int(year), int(month), int(day))
@@ -328,7 +330,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if re.match(r"^(list|view|show|get)\s+(shop|item|grocer)", low_text) or low_text in ["whats on the list", "what are we buying", "what's on the list"]:
             items = db.get_shopping()
-            msg = "Current Shopping List:\n" + ("_Empty_" if not items else "\n".join(f"- {i}" for i in items))
+            msg = "Current Shopping List:\n" + ("_Empty_" if not items else "\n".join(f"{i}. {item}" for i, item in enumerate(items, 1)))
             await update.message.reply_text(msg, parse_mode="Markdown")
             return
 
@@ -383,7 +385,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         put_on_list_match = re.match(r"^put\b[,\s]+(.+)\s+on\s+(?:the\s+)?list", raw_text, re.IGNORECASE)
         remove_match = re.match(r"^(?:remove|delete|cancel|drop|bought)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
         meal_match = re.match(r"^(?:meal|dinner|food|menu|eat)\s+(today|tomorrow|monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
-        appt_match = re.match(r"^(?:appt|appointment|book|schedule|event|calendar)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
+        appt_match = re.match(r"^(?:(?:add(?:ed)?|new|set|create)\s+)?(?:appointment|appt|book(?:ing)?|schedule|event|calendar)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
 
         if note_match:
             note_content = note_match.group(1).strip()
@@ -408,9 +410,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif remove_match:
             remaining = remove_match.group(1).strip()
 
-            appt_rem = re.match(r"^(?:appt|appointment|book|event|schedule|calendar)\b[,\s]+(.+)", remaining, re.IGNORECASE)
+            appt_rem = re.match(r"^(?:appointment|appt|book(?:ing)?|event|schedule|calendar)\b[,\s]+(.+)", remaining, re.IGNORECASE)
             if appt_rem:
                 target = appt_rem.group(1).strip()
+                target = re.sub(r"\s+(?:in|from|on)\s+(?:the\s+)?shopping\s+list$", "", target, flags=re.IGNORECASE).strip()
                 if target.isdigit():
                     target_idx = int(target)
                     if db.delete_appointment_by_index(target_idx):
@@ -418,6 +421,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         publish_appointments()
                     else:
                         await update.message.reply_text(f"Appointment #{target_idx} not found.")
+                elif len(target) < 3:
+                    await update.message.reply_text(f"Text too short ({len(target)} chars) — use the appointment number to delete.")
                 else:
                     if db.delete_appointment_by_text(target):
                         await update.message.reply_text(f"Removed appointment matching: \"{target}\"")
@@ -436,6 +441,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         publish_notes()
                     else:
                         await update.message.reply_text(f"Note #{target_idx} doesn't exist.")
+                elif len(raw_target) < 3:
+                    await update.message.reply_text(f"Text too short ({len(raw_target)} chars) — use the note number to delete.")
                 else:
                     if db.delete_note_by_text(raw_target):
                         await update.message.reply_text("Deleted note matching phrase.")
@@ -444,7 +451,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await update.message.reply_text("Note phrase not found.")
                 return
 
-            if db.delete_shopping_item(remaining):
+            if remaining.isdigit():
+                target_idx = int(remaining)
+                if db.delete_shopping_item_by_index(target_idx):
+                    await update.message.reply_text(f"Removed item #{target_idx} from shopping list.")
+                    publish_shopping()
+                else:
+                    await update.message.reply_text(f"Item #{target_idx} not found.")
+            elif db.delete_shopping_item(remaining):
                 await update.message.reply_text(f"Removed '{remaining}' from shopping list.")
                 publish_shopping()
                 sync_shopping_to_ha(remaining, "remove")
@@ -454,22 +468,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif appt_match:
             rest = appt_match.group(1).strip()
-            parts = rest.split(maxsplit=2)
-            date_val, time_val, title_val = None, None, None
+            rest = re.sub(r"^(?:for|with|on|at|about|regarding)\s+", "", rest, flags=re.IGNORECASE).strip()
 
-            if len(parts) == 3:
-                parsed_iso = parse_uk_date(parts[0])
-                if parsed_iso:
-                    date_val, time_val, title_val = parsed_iso, parts[1], parts[2]
+            tokens = rest.split()
+            date_val = time_val = None
+            pre_parts, between_parts, post_parts = [], [], []
+            found_date = False
+            found_time = False
+
+            for token in tokens:
+                if not found_date:
+                    parsed_iso = parse_uk_date(token)
+                    if parsed_iso:
+                        date_val = parsed_iso
+                        found_date = True
+                    else:
+                        pre_parts.append(token)
+                elif not found_time:
+                    if re.match(r"^\d{1,2}:\d{2}$", token):
+                        time_val = token
+                        found_time = True
+                    else:
+                        between_parts.append(token)
                 else:
-                    title_val = rest
-            elif len(parts) == 2:
-                parsed_iso = parse_uk_date(parts[0])
-                if parsed_iso:
-                    date_val, title_val = parsed_iso, parts[1]
-                else:
-                    title_val = rest
-            else:
+                    post_parts.append(token)
+
+            title_parts = pre_parts + between_parts + post_parts
+            title_val = " ".join(title_parts).strip() if title_parts else rest
+            if not found_date and not found_time:
                 title_val = rest
 
             db.add_appointment(title_val, date=date_val, time=time_val)
